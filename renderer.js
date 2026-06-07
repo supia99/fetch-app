@@ -1,7 +1,7 @@
 const records = [];
 const RECORD_DB_NAME = 'fetch-request-manager-db';
 const RECORD_STORE_NAME = 'requestRecords';
-const MAX_RECORDS = 30;
+const MAX_RECORDS = 50;
 
 let recordDbPromise;
 
