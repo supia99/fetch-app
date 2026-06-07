@@ -1,4 +1,9 @@
 const records = [];
+const RECORD_DB_NAME = 'fetch-request-manager-db';
+const RECORD_STORE_NAME = 'requestRecords';
+const MAX_RECORDS = 30;
+
+let recordDbPromise;
 
 const commandInput = document.getElementById('commandInput');
 const results = document.getElementById('results');
@@ -19,6 +24,105 @@ const clipboardMonitor = {
   lastClipboardText: '',
   isChecking: false,
 };
+
+function requestToPromise(request) {
+  return new Promise((resolve, reject) => {
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error || new Error('IndexedDB request failed'));
+  });
+}
+
+function openRecordDb() {
+  if (recordDbPromise) {
+    return recordDbPromise;
+  }
+
+  if (typeof indexedDB === 'undefined') {
+    return Promise.resolve(null);
+  }
+
+  recordDbPromise = new Promise((resolve, reject) => {
+    const request = indexedDB.open(RECORD_DB_NAME, 1);
+
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(RECORD_STORE_NAME)) {
+        db.createObjectStore(RECORD_STORE_NAME, { keyPath: 'id' });
+      }
+    };
+
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error || new Error('Failed to open IndexedDB'));
+  });
+
+  return recordDbPromise;
+}
+
+function normalizeStoredRecord(record) {
+  return {
+    id: String(record.id || generateId()),
+    startedAt: String(record.startedAt || new Date().toISOString()),
+    command: String(record.command || ''),
+    url: record.url ? String(record.url) : '',
+    method: record.method ? String(record.method) : '',
+    requestBody: record.requestBody ? String(record.requestBody) : '',
+    durationMs: Number.isFinite(record.durationMs) ? record.durationMs : 0,
+    status: record.status || 'failure',
+    httpStatus: Number.isFinite(record.httpStatus) ? record.httpStatus : undefined,
+    responseHeaders: record.responseHeaders && typeof record.responseHeaders === 'object' ? record.responseHeaders : {},
+    responseBody: record.responseBody ? String(record.responseBody) : '',
+    errorMessage: record.errorMessage ? String(record.errorMessage) : '',
+  };
+}
+
+function enforceRecordLimit() {
+  sortRecords();
+  if (records.length > MAX_RECORDS) {
+    records.splice(MAX_RECORDS);
+  }
+}
+
+async function saveRecordsToDb() {
+  const db = await openRecordDb();
+  if (!db) {
+    return;
+  }
+
+  const snapshot = records.map((record) => normalizeStoredRecord(record));
+  snapshot.sort((a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime());
+  const limited = snapshot.slice(0, MAX_RECORDS);
+
+  await new Promise((resolve, reject) => {
+    const tx = db.transaction(RECORD_STORE_NAME, 'readwrite');
+    const store = tx.objectStore(RECORD_STORE_NAME);
+    store.clear();
+    for (const record of limited) {
+      store.put(record);
+    }
+
+    tx.oncomplete = () => resolve();
+    tx.onerror = () => reject(tx.error || new Error('Failed to save records'));
+    tx.onabort = () => reject(tx.error || new Error('Record save transaction aborted'));
+  });
+}
+
+async function loadRecordsFromDb() {
+  const db = await openRecordDb();
+  if (!db) {
+    return;
+  }
+
+  const tx = db.transaction(RECORD_STORE_NAME, 'readonly');
+  const store = tx.objectStore(RECORD_STORE_NAME);
+  const stored = await requestToPromise(store.getAll());
+
+  records.length = 0;
+  for (const item of stored) {
+    records.push(normalizeStoredRecord(item));
+  }
+
+  enforceRecordLimit();
+}
 
 function generateId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
@@ -513,7 +617,9 @@ async function executeFetchCommand(command) {
   };
 
   records.push(record);
+  enforceRecordLimit();
   render();
+  await saveRecordsToDb();
 
   const startMs = performance.now();
 
@@ -573,6 +679,7 @@ async function executeFetchCommand(command) {
   }
 
   render();
+  await saveRecordsToDb();
 }
 
 commandInput.addEventListener('keydown', async (event) => {
@@ -626,6 +733,7 @@ results.addEventListener('click', async (event) => {
     if (index >= 0) {
       records.splice(index, 1);
       render();
+      await saveRecordsToDb();
     }
   }
 });
@@ -651,5 +759,11 @@ detailDialog.addEventListener('click', (event) => {
   }
 });
 
-render();
-renderClipboardMonitorState();
+async function initializeApp() {
+  await loadRecordsFromDb();
+  enforceRecordLimit();
+  render();
+  renderClipboardMonitorState();
+}
+
+void initializeApp();
