@@ -221,13 +221,7 @@ function getCommandPreviewHtml(record) {
   }
 
   const summary = extractDownloadBodySummary(record.command, record.requestBody);
-  return `
-    <div class="command-preview">
-      <div>siteName: ${escapeHtml(summary.siteName)}</div>
-      <div>title: ${escapeHtml(summary.title)}</div>
-      <div>imgUrls count: ${summary.imgUrlsCount}</div>
-    </div>
-  `;
+  return `<div class="command-preview"><div>siteName: ${escapeHtml(summary.siteName)}</div><div>title: ${escapeHtml(summary.title)}</div><div>imgUrls count: ${summary.imgUrlsCount}</div></div>`;
 }
 
 function getMetaHtml(record) {
