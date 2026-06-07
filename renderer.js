@@ -1,7 +1,7 @@
 const records = [];
 const RECORD_DB_NAME = 'fetch-request-manager-db';
 const RECORD_STORE_NAME = 'requestRecords';
-const MAX_RECORDS = 50;
+const MAX_RECORDS = 100;
 
 let recordDbPromise;
 
@@ -11,6 +11,8 @@ const detailDialog = document.getElementById('detailDialog');
 const closeDialog = document.getElementById('closeDialog');
 const clipboardMonitorToggle = document.getElementById('clipboardMonitorToggle');
 const clipboardMonitorStatus = document.getElementById('clipboardMonitorStatus');
+const queueProcessingToggle = document.getElementById('queueProcessingToggle');
+const queueProcessingStatus = document.getElementById('queueProcessingStatus');
 const statusSummary = document.getElementById('statusSummary');
 
 const detailStatus = document.getElementById('detailStatus');
@@ -25,6 +27,7 @@ const clipboardMonitor = {
   lastClipboardText: '',
   isChecking: false,
   isExecuting: false,
+  autoProcessEnabled: true,
   pendingCommands: [],
 };
 
@@ -287,6 +290,27 @@ function setClipboardMonitorStatus(message) {
   clipboardMonitorStatus.textContent = message;
 }
 
+function renderQueueProcessingState() {
+  if (!queueProcessingToggle || !queueProcessingStatus) {
+    return;
+  }
+
+  const pressed = clipboardMonitor.autoProcessEnabled ? 'true' : 'false';
+  queueProcessingToggle.setAttribute('aria-pressed', pressed);
+  queueProcessingToggle.textContent = `キュー自動処理: ${clipboardMonitor.autoProcessEnabled ? 'ON' : 'OFF'}`;
+  queueProcessingStatus.textContent = clipboardMonitor.autoProcessEnabled
+    ? 'キュー自動処理はONです'
+    : 'キュー自動処理はOFFです(キューは保持されます)';
+}
+
+function maybeStartQueueProcessing() {
+  if (!clipboardMonitor.autoProcessEnabled) {
+    return;
+  }
+
+  void processPendingClipboardQueue();
+}
+
 function renderClipboardMonitorState() {
   const pressed = clipboardMonitor.enabled ? 'true' : 'false';
   clipboardMonitorToggle.setAttribute('aria-pressed', pressed);
@@ -339,7 +363,8 @@ async function checkClipboardForFetchCommand() {
       return;
     }
 
-    void runClipboardCommand(normalizedCommand);
+    await enqueueClipboardCommand(normalizedCommand);
+    maybeStartQueueProcessing();
   } catch (error) {
     clipboardMonitor.enabled = false;
     if (clipboardMonitor.timerId) {
@@ -355,6 +380,11 @@ async function checkClipboardForFetchCommand() {
 
 async function runClipboardCommand(initialCommand) {
   if (clipboardMonitor.isExecuting) {
+    await enqueueClipboardCommand(initialCommand);
+    return;
+  }
+
+  if (!clipboardMonitor.autoProcessEnabled) {
     await enqueueClipboardCommand(initialCommand);
     return;
   }
@@ -382,6 +412,10 @@ async function runClipboardCommand(initialCommand) {
 }
 
 async function processPendingClipboardQueue() {
+  if (!clipboardMonitor.autoProcessEnabled) {
+    return;
+  }
+
   if (clipboardMonitor.isExecuting) {
     return;
   }
@@ -426,12 +460,11 @@ async function setClipboardMonitorEnabled(enabled) {
 
       const immediateCommand = normalizeCommand(extractFetchCommandFromText(clipboardText));
       if (immediateCommand) {
+        await enqueueClipboardCommand(immediateCommand);
         if (clipboardMonitor.isExecuting) {
-          await enqueueClipboardCommand(immediateCommand);
           setClipboardMonitorStatus('監視ON: 実行中のため次のfetchコマンドをキューしました');
-        } else {
-          void runClipboardCommand(immediateCommand);
         }
+        maybeStartQueueProcessing();
       }
     } catch {
       clipboardMonitor.enabled = false;
@@ -447,7 +480,7 @@ async function setClipboardMonitorEnabled(enabled) {
   }
 
   if (clipboardMonitor.pendingCommands.length > 0) {
-    void processPendingClipboardQueue();
+    maybeStartQueueProcessing();
   }
 
   renderClipboardMonitorState();
@@ -968,6 +1001,12 @@ clipboardMonitorToggle.addEventListener('click', async () => {
   await setClipboardMonitorEnabled(!clipboardMonitor.enabled);
 });
 
+queueProcessingToggle.addEventListener('click', () => {
+  clipboardMonitor.autoProcessEnabled = !clipboardMonitor.autoProcessEnabled;
+  renderQueueProcessingState();
+  maybeStartQueueProcessing();
+});
+
 detailDialog.addEventListener('click', (event) => {
   const rect = detailDialog.getBoundingClientRect();
   const isOutside =
@@ -1042,9 +1081,10 @@ async function initializeApp() {
   enforceRecordLimit();
   render();
   renderClipboardMonitorState();
+  renderQueueProcessingState();
 
   if (clipboardMonitor.pendingCommands.length > 0) {
-    void processPendingClipboardQueue();
+    maybeStartQueueProcessing();
   }
 }
 
