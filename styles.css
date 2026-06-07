@@ -46,6 +46,25 @@ h1 {
   font-size: 0.9rem;
 }
 
+.monitor-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+.monitor-toggle[aria-pressed='true'] {
+  background: #edf6ff;
+  border-color: #9ac3eb;
+  color: #124067;
+}
+
+.monitor-status {
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
 #commandInput {
   width: 100%;
   min-height: 88px;

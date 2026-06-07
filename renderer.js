@@ -4,12 +4,21 @@ const commandInput = document.getElementById('commandInput');
 const results = document.getElementById('results');
 const detailDialog = document.getElementById('detailDialog');
 const closeDialog = document.getElementById('closeDialog');
+const clipboardMonitorToggle = document.getElementById('clipboardMonitorToggle');
+const clipboardMonitorStatus = document.getElementById('clipboardMonitorStatus');
 
 const detailStatus = document.getElementById('detailStatus');
 const detailCommand = document.getElementById('detailCommand');
 const detailHeaders = document.getElementById('detailHeaders');
 const detailBody = document.getElementById('detailBody');
 const detailError = document.getElementById('detailError');
+
+const clipboardMonitor = {
+  enabled: false,
+  timerId: null,
+  lastClipboardText: '',
+  isChecking: false,
+};
 
 function generateId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
@@ -60,6 +69,121 @@ function extractResponseMessage(responseBody, errorMessage) {
 
 function normalizeCommand(command) {
   return command.trim().replace(/;+\s*$/, '');
+}
+
+function canUseClipboardMonitor() {
+  return typeof window.electronAPI?.readClipboardText === 'function';
+}
+
+async function readClipboardText() {
+  if (!canUseClipboardMonitor()) {
+    throw new Error('clipboard_unavailable');
+  }
+
+  return window.electronAPI.readClipboardText();
+}
+
+function extractFetchCommandFromText(text) {
+  if (typeof text !== 'string') {
+    return '';
+  }
+
+  const trimmed = text.trim();
+  return /fetch\s*\(/.test(trimmed) ? trimmed : '';
+}
+
+function setClipboardMonitorStatus(message) {
+  clipboardMonitorStatus.textContent = message;
+}
+
+function renderClipboardMonitorState() {
+  const pressed = clipboardMonitor.enabled ? 'true' : 'false';
+  clipboardMonitorToggle.setAttribute('aria-pressed', pressed);
+  clipboardMonitorToggle.textContent = `クリップボード監視: ${clipboardMonitor.enabled ? 'ON' : 'OFF'}`;
+
+  if (!canUseClipboardMonitor()) {
+    setClipboardMonitorStatus('この環境ではクリップボード監視を利用できません');
+    clipboardMonitorToggle.disabled = true;
+    return;
+  }
+
+  clipboardMonitorToggle.disabled = false;
+
+  if (!clipboardMonitor.enabled) {
+    setClipboardMonitorStatus('クリップボード監視はOFFです');
+    return;
+  }
+
+  setClipboardMonitorStatus('監視ON: fetchコマンドを検知すると自動実行します');
+}
+
+async function checkClipboardForFetchCommand() {
+  if (!clipboardMonitor.enabled || clipboardMonitor.isChecking) {
+    return;
+  }
+
+  clipboardMonitor.isChecking = true;
+
+  try {
+    const clipboardText = await readClipboardText();
+
+    if (clipboardText === clipboardMonitor.lastClipboardText) {
+      return;
+    }
+
+    clipboardMonitor.lastClipboardText = clipboardText;
+    const fetchCommand = extractFetchCommandFromText(clipboardText);
+    if (!fetchCommand) {
+      return;
+    }
+
+    const normalizedCommand = normalizeCommand(fetchCommand);
+    commandInput.value = normalizedCommand;
+    setClipboardMonitorStatus('監視ON: クリップボードのfetchコマンドを自動実行しました');
+    await executeFetchCommand(normalizedCommand);
+    commandInput.value = '';
+  } catch (error) {
+    clipboardMonitor.enabled = false;
+    if (clipboardMonitor.timerId) {
+      window.clearInterval(clipboardMonitor.timerId);
+      clipboardMonitor.timerId = null;
+    }
+    setClipboardMonitorStatus('クリップボード監視を開始できませんでした');
+    renderClipboardMonitorState();
+  } finally {
+    clipboardMonitor.isChecking = false;
+  }
+}
+
+async function setClipboardMonitorEnabled(enabled) {
+  if (!canUseClipboardMonitor()) {
+    renderClipboardMonitorState();
+    return;
+  }
+
+  clipboardMonitor.enabled = enabled;
+
+  if (clipboardMonitor.timerId) {
+    window.clearInterval(clipboardMonitor.timerId);
+    clipboardMonitor.timerId = null;
+  }
+
+  if (enabled) {
+    try {
+      clipboardMonitor.lastClipboardText = await readClipboardText();
+    } catch {
+      clipboardMonitor.enabled = false;
+      renderClipboardMonitorState();
+      setClipboardMonitorStatus('クリップボード監視を開始できませんでした');
+      return;
+    }
+
+    clipboardMonitor.timerId = window.setInterval(() => {
+      void checkClipboardForFetchCommand();
+    }, 1000);
+  }
+
+  renderClipboardMonitorState();
 }
 
 function isDownloadPostRecord(record) {
@@ -510,6 +634,10 @@ closeDialog.addEventListener('click', () => {
   detailDialog.close();
 });
 
+clipboardMonitorToggle.addEventListener('click', async () => {
+  await setClipboardMonitorEnabled(!clipboardMonitor.enabled);
+});
+
 detailDialog.addEventListener('click', (event) => {
   const rect = detailDialog.getBoundingClientRect();
   const isOutside =
@@ -524,3 +652,4 @@ detailDialog.addEventListener('click', (event) => {
 });
 
 render();
+renderClipboardMonitorState();

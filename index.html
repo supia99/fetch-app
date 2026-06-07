@@ -11,6 +11,12 @@
       <header class="composer">
         <h1>Fetch Request Manager</h1>
         <p class="subtitle">Enterで実行 / Shift+Enterで改行</p>
+        <div class="monitor-bar">
+          <button id="clipboardMonitorToggle" type="button" class="monitor-toggle" aria-pressed="false">
+            クリップボード監視: OFF
+          </button>
+          <span id="clipboardMonitorStatus" class="monitor-status">アプリがアクティブな間だけ監視します</span>
+        </div>
         <textarea
           id="commandInput"
           spellcheck="false"
