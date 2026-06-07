@@ -37,6 +37,27 @@ function toHeaderObject(headers) {
   return out;
 }
 
+function extractResponseMessage(responseBody, errorMessage) {
+  if (typeof responseBody === 'string' && responseBody.trim()) {
+    try {
+      const parsed = JSON.parse(responseBody);
+      if (parsed && typeof parsed === 'object' && typeof parsed.message === 'string') {
+        return parsed.message;
+      }
+    } catch {
+      // Response body is not JSON; fallback below.
+    }
+
+    return responseBody.trim().slice(0, 200);
+  }
+
+  if (typeof errorMessage === 'string' && errorMessage.trim()) {
+    return errorMessage.trim().slice(0, 200);
+  }
+
+  return '-';
+}
+
 function normalizeCommand(command) {
   return command.trim().replace(/;+\s*$/, '');
 }
@@ -78,6 +99,7 @@ function render() {
           <div>URL: ${record.url || '-'}</div>
           <div>Method: ${record.method || '-'}</div>
           <div>実行時間: ${record.durationMs ?? 0} ms</div>
+          <div>message: ${escapeHtml(extractResponseMessage(record.responseBody, record.errorMessage))}</div>
         </div>
         <div>${getStatusHtml(record)}</div>
       </div>
@@ -85,6 +107,7 @@ function render() {
       <div class="actions">
         <button type="button" data-action="detail" data-id="${record.id}">詳細表示</button>
         <button type="button" data-action="rerun" data-id="${record.id}">再実行</button>
+        <button type="button" data-action="delete" data-id="${record.id}">削除</button>
       </div>
     `;
 
@@ -194,8 +217,10 @@ commandInput.addEventListener('keydown', async (event) => {
 
   event.preventDefault();
 
-  const command = commandInput.value.trim();
-  if (!command) {
+  const command = commandInput.value;
+  commandInput.value = '';
+
+  if (!command.trim()) {
     return;
   }
 
@@ -228,6 +253,15 @@ results.addEventListener('click', async (event) => {
 
   if (action === 'rerun') {
     await executeFetchCommand(record.command);
+    return;
+  }
+
+  if (action === 'delete') {
+    const index = records.findIndex((item) => item.id === id);
+    if (index >= 0) {
+      records.splice(index, 1);
+      render();
+    }
   }
 });
 
