@@ -11,6 +11,7 @@ const detailDialog = document.getElementById('detailDialog');
 const closeDialog = document.getElementById('closeDialog');
 const clipboardMonitorToggle = document.getElementById('clipboardMonitorToggle');
 const clipboardMonitorStatus = document.getElementById('clipboardMonitorStatus');
+const statusSummary = document.getElementById('statusSummary');
 
 const detailStatus = document.getElementById('detailStatus');
 const detailCommand = document.getElementById('detailCommand');
@@ -696,8 +697,43 @@ function getStatusHtml(record) {
   return `<span class="status failure">失敗${record.httpStatus ? ` (HTTP ${record.httpStatus})` : ''}</span>`;
 }
 
+function renderStatusSummary() {
+  if (!statusSummary) {
+    return;
+  }
+
+  const counts = {
+    total: records.length,
+    queued: 0,
+    running: 0,
+    success: 0,
+    failure: 0,
+  };
+
+  for (const record of records) {
+    if (record.status === 'queued') {
+      counts.queued += 1;
+    } else if (record.status === 'running') {
+      counts.running += 1;
+    } else if (record.status === 'success') {
+      counts.success += 1;
+    } else {
+      counts.failure += 1;
+    }
+  }
+
+  statusSummary.innerHTML = `
+    <span class="status-chip total">全体: ${counts.total}</span>
+    <span class="status-chip queued">実行前: ${counts.queued}</span>
+    <span class="status-chip running">実行中: ${counts.running}</span>
+    <span class="status-chip success">成功: ${counts.success}</span>
+    <span class="status-chip failure">失敗: ${counts.failure}</span>
+  `;
+}
+
 function render() {
   sortRecords();
+  renderStatusSummary();
 
   if (records.length === 0) {
     results.innerHTML = '<div class="empty">fetchコマンドを入力してEnterで実行してください。</div>';

@@ -65,6 +65,42 @@ h1 {
   font-size: 0.88rem;
 }
 
+.status-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.status-chip {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 0.82rem;
+  background: #fff;
+  color: var(--muted);
+}
+
+.status-chip.total {
+  color: var(--ink);
+}
+
+.status-chip.queued {
+  color: #8f5a12;
+}
+
+.status-chip.running {
+  color: var(--running);
+}
+
+.status-chip.success {
+  color: var(--success);
+}
+
+.status-chip.failure {
+  color: var(--failure);
+}
+
 #commandInput {
   width: 100%;
   min-height: 88px;
