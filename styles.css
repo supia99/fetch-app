@@ -88,6 +88,7 @@ h1 {
   gap: 12px;
 }
 
+
 .card {
   background: var(--surface);
   border: 1px solid var(--line);
@@ -153,6 +154,10 @@ h1 {
 
 .status.failure {
   color: var(--failure);
+}
+
+.status.queued {
+  color: #8f5a12;
 }
 
 .spinner {

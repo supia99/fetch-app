@@ -23,7 +23,80 @@ const clipboardMonitor = {
   timerId: null,
   lastClipboardText: '',
   isChecking: false,
+  isExecuting: false,
+  pendingCommands: [],
 };
+
+function createQueuedRecord(command) {
+  const normalizedCommand = normalizeCommand(command);
+  const startedAt = new Date().toISOString();
+  const { url, method } = extractSummary(normalizedCommand);
+
+  const record = {
+    id: generateId(),
+    startedAt,
+    command: normalizedCommand,
+    url,
+    method,
+    requestBody: '',
+    durationMs: 0,
+    status: 'queued',
+    httpStatus: undefined,
+    responseHeaders: undefined,
+    responseBody: undefined,
+    errorMessage: '',
+  };
+
+  records.push(record);
+  enforceRecordLimit();
+  return record;
+}
+
+async function enqueueClipboardCommand(command) {
+  const normalized = normalizeCommand(command);
+  if (!normalized) {
+    return null;
+  }
+
+  const lastQueued = clipboardMonitor.pendingCommands[clipboardMonitor.pendingCommands.length - 1]?.command;
+  if (lastQueued === normalized) {
+    return null;
+  }
+
+  const existingQueued = clipboardMonitor.pendingCommands.find((item) => item.command === normalized);
+  if (existingQueued) {
+    return existingQueued;
+  }
+
+  const record = createQueuedRecord(normalized);
+  const queuedItem = { recordId: record.id, command: normalized };
+  clipboardMonitor.pendingCommands.push(queuedItem);
+  render();
+  await saveRecordsToDb();
+  return queuedItem;
+}
+
+async function clearQueuedCommandsAndCards() {
+  if (clipboardMonitor.pendingCommands.length === 0) {
+    return;
+  }
+
+  const pendingIds = new Set(clipboardMonitor.pendingCommands.map((item) => item.recordId));
+  clipboardMonitor.pendingCommands = [];
+
+  let changed = false;
+  for (let i = records.length - 1; i >= 0; i -= 1) {
+    if (pendingIds.has(records[i].id) || records[i].status === 'queued') {
+      records.splice(i, 1);
+      changed = true;
+    }
+  }
+
+  if (changed) {
+    render();
+    await saveRecordsToDb();
+  }
+}
 
 function requestToPromise(request) {
   return new Promise((resolve, reject) => {
@@ -242,10 +315,17 @@ async function checkClipboardForFetchCommand() {
     }
 
     const normalizedCommand = normalizeCommand(fetchCommand);
-    commandInput.value = normalizedCommand;
-    setClipboardMonitorStatus('監視ON: クリップボードのfetchコマンドを自動実行しました');
-    await executeFetchCommand(normalizedCommand);
-    commandInput.value = '';
+    if (!normalizedCommand) {
+      return;
+    }
+
+    if (clipboardMonitor.isExecuting) {
+      await enqueueClipboardCommand(normalizedCommand);
+      setClipboardMonitorStatus('監視ON: 実行中のため次のfetchコマンドをキューしました');
+      return;
+    }
+
+    void runClipboardCommand(normalizedCommand);
   } catch (error) {
     clipboardMonitor.enabled = false;
     if (clipboardMonitor.timerId) {
@@ -256,6 +336,34 @@ async function checkClipboardForFetchCommand() {
     renderClipboardMonitorState();
   } finally {
     clipboardMonitor.isChecking = false;
+  }
+}
+
+async function runClipboardCommand(initialCommand) {
+  if (clipboardMonitor.isExecuting) {
+    await enqueueClipboardCommand(initialCommand);
+    return;
+  }
+
+  clipboardMonitor.isExecuting = true;
+
+  try {
+    await enqueueClipboardCommand(initialCommand);
+
+    while (clipboardMonitor.pendingCommands.length > 0) {
+      const nextItem = clipboardMonitor.pendingCommands.shift();
+      const queuedRecord = records.find((item) => item.id === nextItem.recordId);
+      if (!queuedRecord) {
+        continue;
+      }
+
+      commandInput.value = nextItem.command;
+      setClipboardMonitorStatus('監視ON: クリップボードのfetchコマンドを自動実行しました');
+      await executeFetchCommand(nextItem.command, queuedRecord);
+      commandInput.value = '';
+    }
+  } finally {
+    clipboardMonitor.isExecuting = false;
   }
 }
 
@@ -275,6 +383,7 @@ async function setClipboardMonitorEnabled(enabled) {
   if (enabled) {
     try {
       clipboardMonitor.lastClipboardText = await readClipboardText();
+      clipboardMonitor.pendingCommands = [];
     } catch {
       clipboardMonitor.enabled = false;
       renderClipboardMonitorState();
@@ -285,6 +394,10 @@ async function setClipboardMonitorEnabled(enabled) {
     clipboardMonitor.timerId = window.setInterval(() => {
       void checkClipboardForFetchCommand();
     }, 1000);
+  }
+
+  if (!enabled) {
+    await clearQueuedCommandsAndCards();
   }
 
   renderClipboardMonitorState();
@@ -521,6 +634,10 @@ function sortRecords() {
 }
 
 function getStatusHtml(record) {
+  if (record.status === 'queued') {
+    return '<span class="status queued">実行前</span>';
+  }
+
   if (record.status === 'running') {
     return '<span class="status running"><span class="spinner" aria-hidden="true"></span>実行中</span>';
   }
@@ -591,7 +708,7 @@ function fillDetail(record) {
   detailError.textContent = record.errorMessage ?? '';
 }
 
-async function executeFetchCommand(command) {
+async function executeFetchCommand(command, existingRecord) {
   const normalizedCommand = normalizeCommand(command);
   if (!normalizedCommand) {
     return;
@@ -601,7 +718,7 @@ async function executeFetchCommand(command) {
   const { url, method } = extractSummary(normalizedCommand);
   const inspectedRequest = await inspectFetchRequest(normalizedCommand, url, method);
 
-  const record = {
+  const record = existingRecord || {
     id: generateId(),
     startedAt,
     command: normalizedCommand,
@@ -616,7 +733,22 @@ async function executeFetchCommand(command) {
     errorMessage: undefined,
   };
 
-  records.push(record);
+  if (!existingRecord) {
+    records.push(record);
+  } else {
+    record.startedAt = startedAt;
+    record.command = normalizedCommand;
+    record.url = inspectedRequest.url || url;
+    record.method = inspectedRequest.method || method;
+    record.requestBody = inspectedRequest.bodyText || '';
+    record.durationMs = 0;
+    record.status = 'running';
+    record.httpStatus = undefined;
+    record.responseHeaders = undefined;
+    record.responseBody = undefined;
+    record.errorMessage = undefined;
+  }
+
   enforceRecordLimit();
   render();
   await saveRecordsToDb();
@@ -729,6 +861,11 @@ results.addEventListener('click', async (event) => {
   }
 
   if (action === 'delete') {
+    const queueIndex = clipboardMonitor.pendingCommands.findIndex((item) => item.recordId === id);
+    if (queueIndex >= 0) {
+      clipboardMonitor.pendingCommands.splice(queueIndex, 1);
+    }
+
     const index = records.findIndex((item) => item.id === id);
     if (index >= 0) {
       records.splice(index, 1);
@@ -761,6 +898,11 @@ detailDialog.addEventListener('click', (event) => {
 
 async function initializeApp() {
   await loadRecordsFromDb();
+  for (let i = records.length - 1; i >= 0; i -= 1) {
+    if (records[i].status === 'queued') {
+      records.splice(i, 1);
+    }
+  }
   enforceRecordLimit();
   render();
   renderClipboardMonitorState();
