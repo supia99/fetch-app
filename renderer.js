@@ -418,7 +418,18 @@ async function setClipboardMonitorEnabled(enabled) {
 
   if (enabled) {
     try {
-      clipboardMonitor.lastClipboardText = await readClipboardText();
+      const clipboardText = await readClipboardText();
+      clipboardMonitor.lastClipboardText = clipboardText;
+
+      const immediateCommand = normalizeCommand(extractFetchCommandFromText(clipboardText));
+      if (immediateCommand) {
+        if (clipboardMonitor.isExecuting) {
+          await enqueueClipboardCommand(immediateCommand);
+          setClipboardMonitorStatus('監視ON: 実行中のため次のfetchコマンドをキューしました');
+        } else {
+          void runClipboardCommand(immediateCommand);
+        }
+      }
     } catch {
       clipboardMonitor.enabled = false;
       renderClipboardMonitorState();
@@ -935,8 +946,63 @@ detailDialog.addEventListener('click', (event) => {
   }
 });
 
+const ACTIVE_REQUESTS_URL = 'http://localhost:8081/requests/active';
+
+async function checkRunningRecordsOnStartup() {
+  const runningRecords = records.filter((record) => record.status === 'running');
+  if (runningRecords.length === 0) {
+    return;
+  }
+
+  let activeTitles = new Set();
+
+  try {
+    const response = await fetch(ACTIVE_REQUESTS_URL);
+    if (response.ok) {
+      const data = await response.json();
+      const activeRequests = Array.isArray(data.requests) ? data.requests : [];
+      for (const req of activeRequests) {
+        if (req.body && typeof req.body.title === 'string' && req.body.title) {
+          activeTitles.add(req.body.title);
+        }
+      }
+    }
+  } catch {
+    // Server unreachable: treat all running records as needing to be queued
+  }
+
+  let changed = false;
+
+  for (const record of runningRecords) {
+    let title = '';
+
+    if (record.requestBody) {
+      try {
+        const parsed = JSON.parse(record.requestBody);
+        if (parsed && typeof parsed.title === 'string') {
+          title = parsed.title;
+        }
+      } catch {
+        // requestBody is not JSON, fall through
+      }
+    }
+
+    if (title && activeTitles.has(title)) {
+      continue;
+    }
+
+    record.status = 'queued';
+    changed = true;
+  }
+
+  if (changed) {
+    await saveRecordsToDb();
+  }
+}
+
 async function initializeApp() {
   await loadRecordsFromDb();
+  await checkRunningRecordsOnStartup();
   rebuildQueueFromQueuedCards();
   enforceRecordLimit();
   render();
