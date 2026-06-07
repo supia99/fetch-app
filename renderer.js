@@ -50,6 +50,7 @@ async function createQueuedRecord(command) {
 
   records.push(record);
   enforceRecordLimit();
+  await saveRecordsToDb();
   return record;
 }
 
@@ -73,7 +74,6 @@ async function enqueueClipboardCommand(command) {
   const queuedItem = { recordId: record.id, command: normalized };
   clipboardMonitor.pendingCommands.push(queuedItem);
   render();
-  await saveRecordsToDb();
   return queuedItem;
 }
 
