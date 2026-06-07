@@ -27,18 +27,19 @@ const clipboardMonitor = {
   pendingCommands: [],
 };
 
-function createQueuedRecord(command) {
+async function createQueuedRecord(command) {
   const normalizedCommand = normalizeCommand(command);
   const startedAt = new Date().toISOString();
   const { url, method } = extractSummary(normalizedCommand);
+  const inspectedRequest = await inspectFetchRequest(normalizedCommand, url, method);
 
   const record = {
     id: generateId(),
     startedAt,
     command: normalizedCommand,
-    url,
-    method,
-    requestBody: '',
+    url: inspectedRequest.url || url,
+    method: inspectedRequest.method || method,
+    requestBody: inspectedRequest.bodyText || '',
     durationMs: 0,
     status: 'queued',
     httpStatus: undefined,
@@ -68,7 +69,7 @@ async function enqueueClipboardCommand(command) {
     return existingQueued;
   }
 
-  const record = createQueuedRecord(normalized);
+  const record = await createQueuedRecord(normalized);
   const queuedItem = { recordId: record.id, command: normalized };
   clipboardMonitor.pendingCommands.push(queuedItem);
   render();
