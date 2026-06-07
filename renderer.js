@@ -447,10 +447,6 @@ async function setClipboardMonitorEnabled(enabled) {
     }
   }
 
-  if (!enabled) {
-    await clearQueuedCommandsAndCards();
-  }
-
   renderClipboardMonitorState();
 }
 
