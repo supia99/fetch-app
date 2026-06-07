@@ -76,6 +76,10 @@ h1 {
   padding: 14px;
 }
 
+.card--compact {
+  padding: 8px;
+}
+
 .card-top {
   display: flex;
   justify-content: space-between;
@@ -90,6 +94,11 @@ h1 {
   color: var(--muted);
 }
 
+.card--compact .meta {
+  gap: 1px;
+  font-size: 0.82rem;
+}
+
 .command-preview {
   margin-top: 10px;
   padding: 10px;
@@ -100,6 +109,12 @@ h1 {
   font-size: 12px;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.card--compact .command-preview {
+  margin-top: 4px;
+  padding: 6px 8px;
+  font-size: 11px;
 }
 
 .status {
@@ -134,6 +149,16 @@ h1 {
   margin-top: 10px;
   display: flex;
   gap: 8px;
+}
+
+.card--compact .actions {
+  margin-top: 4px;
+  gap: 6px;
+}
+
+.card--compact .actions button {
+  padding: 4px 9px;
+  font-size: 12px;
 }
 
 button {
