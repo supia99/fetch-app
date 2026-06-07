@@ -338,6 +338,10 @@ function maybeStartQueueProcessing() {
     return;
   }
 
+  if (records.some((record) => record.status === 'running')) {
+    return;
+  }
+
   void processPendingClipboardQueue();
 }
 
