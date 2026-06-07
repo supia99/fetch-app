@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Fetch Request Manager</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="composer">
+        <h1>Fetch Request Manager</h1>
+        <p class="subtitle">Enterで実行 / Shift+Enterで改行</p>
+        <textarea
+          id="commandInput"
+          spellcheck="false"
+          placeholder="fetch('https://api.example.com/users', { method: 'GET' })"
+        ></textarea>
+      </header>
+
+      <main>
+        <section id="results" class="results" aria-live="polite"></section>
+      </main>
+    </div>
+
+    <dialog id="detailDialog" class="detail-dialog">
+      <article>
+        <header class="dialog-header">
+          <h2>Request Detail</h2>
+          <button id="closeDialog" class="ghost-btn" type="button">Close</button>
+        </header>
+
+        <div class="detail-grid">
+          <div>
+            <h3>Status</h3>
+            <pre id="detailStatus"></pre>
+          </div>
+          <div>
+            <h3>Command</h3>
+            <pre id="detailCommand"></pre>
+          </div>
+          <div>
+            <h3>Headers</h3>
+            <pre id="detailHeaders"></pre>
+          </div>
+          <div>
+            <h3>Body</h3>
+            <pre id="detailBody"></pre>
+          </div>
+          <div>
+            <h3>Error</h3>
+            <pre id="detailError"></pre>
+          </div>
+        </div>
+      </article>
+    </dialog>
+
+    <script src="renderer.js"></script>
+  </body>
+</html>

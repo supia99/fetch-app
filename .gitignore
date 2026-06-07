@@ -1,0 +1,49 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+/dist/
+/build/
+/out/
+/release/
+
+# Packaged app artifacts
+*.dmg
+*.exe
+*.AppImage
+*.snap
+*.deb
+*.rpm
+*.msi
+*.nupkg
+*.zip
+*.tar.gz
+*.asar
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Coverage
+coverage/
+.nyc_output/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Electron / tool cache
+.electron/
+.electron-cache/
+
+# OS / Editor
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.vscode-test/
