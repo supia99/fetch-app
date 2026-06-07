@@ -98,6 +98,17 @@ async function clearQueuedCommandsAndCards() {
   }
 }
 
+function rebuildQueueFromQueuedCards() {
+  const queuedRecords = records
+    .filter((record) => record.status === 'queued' && normalizeCommand(record.command))
+    .sort((a, b) => new Date(a.startedAt).getTime() - new Date(b.startedAt).getTime());
+
+  clipboardMonitor.pendingCommands = queuedRecords.map((record) => ({
+    recordId: record.id,
+    command: normalizeCommand(record.command),
+  }));
+}
+
 function requestToPromise(request) {
   return new Promise((resolve, reject) => {
     request.onsuccess = () => resolve(request.result);
@@ -367,6 +378,31 @@ async function runClipboardCommand(initialCommand) {
   }
 }
 
+async function processPendingClipboardQueue() {
+  if (clipboardMonitor.isExecuting) {
+    return;
+  }
+
+  clipboardMonitor.isExecuting = true;
+
+  try {
+    while (clipboardMonitor.pendingCommands.length > 0) {
+      const nextItem = clipboardMonitor.pendingCommands.shift();
+      const queuedRecord = records.find((item) => item.id === nextItem.recordId);
+      if (!queuedRecord) {
+        continue;
+      }
+
+      commandInput.value = nextItem.command;
+      setClipboardMonitorStatus('監視ON: クリップボードのfetchコマンドを自動実行しました');
+      await executeFetchCommand(nextItem.command, queuedRecord);
+      commandInput.value = '';
+    }
+  } finally {
+    clipboardMonitor.isExecuting = false;
+  }
+}
+
 async function setClipboardMonitorEnabled(enabled) {
   if (!canUseClipboardMonitor()) {
     renderClipboardMonitorState();
@@ -383,7 +419,6 @@ async function setClipboardMonitorEnabled(enabled) {
   if (enabled) {
     try {
       clipboardMonitor.lastClipboardText = await readClipboardText();
-      clipboardMonitor.pendingCommands = [];
     } catch {
       clipboardMonitor.enabled = false;
       renderClipboardMonitorState();
@@ -394,6 +429,10 @@ async function setClipboardMonitorEnabled(enabled) {
     clipboardMonitor.timerId = window.setInterval(() => {
       void checkClipboardForFetchCommand();
     }, 1000);
+
+    if (clipboardMonitor.pendingCommands.length > 0) {
+      void processPendingClipboardQueue();
+    }
   }
 
   if (!enabled) {
@@ -898,11 +937,7 @@ detailDialog.addEventListener('click', (event) => {
 
 async function initializeApp() {
   await loadRecordsFromDb();
-  for (let i = records.length - 1; i >= 0; i -= 1) {
-    if (records[i].status === 'queued') {
-      records.splice(i, 1);
-    }
-  }
+  rebuildQueueFromQueuedCards();
   enforceRecordLimit();
   render();
   renderClipboardMonitorState();
