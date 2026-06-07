@@ -13,7 +13,8 @@
   },
   "devDependencies": {
     "electron": "^41.7.1",
-    "electronmon": "^2.0.4"
+    "electronmon": "^2.0.4",
+    "sharp": "^0.34.5"
   },
   "volta": {
     "node": "26.3.0"
