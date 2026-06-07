@@ -215,6 +215,46 @@ function deriveUrlAndMethod(input, init) {
   };
 }
 
+async function inspectFetchRequest(command, fallbackUrl, fallbackMethod) {
+  let capturedRequest = {
+    url: fallbackUrl || '',
+    method: fallbackMethod || 'GET',
+    bodyText: '',
+  };
+
+  const inspectFetch = async (input, init) => {
+    const req = deriveUrlAndMethod(input, init);
+    capturedRequest = {
+      url: req.url || capturedRequest.url,
+      method: req.method || capturedRequest.method,
+      bodyText: toRequestBodyText(init?.body),
+    };
+
+    return new Response('{}', {
+      status: 200,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+  };
+
+  try {
+    const runner = new Function(
+      'fetch',
+      `return (async () => {
+        const result = await (${command});
+        return result;
+      })();`
+    );
+
+    await runner(inspectFetch);
+  } catch {
+    // Fall back to regex-derived values when dry-run inspection fails.
+  }
+
+  return capturedRequest;
+}
+
 function getCommandPreviewHtml(record) {
   if (!isDownloadPostRecord(record)) {
     return `<pre class="command-preview">${escapeHtml(record.command)}</pre>`;
@@ -331,14 +371,15 @@ async function executeFetchCommand(command) {
 
   const startedAt = new Date().toISOString();
   const { url, method } = extractSummary(normalizedCommand);
+  const inspectedRequest = await inspectFetchRequest(normalizedCommand, url, method);
 
   const record = {
     id: generateId(),
     startedAt,
     command: normalizedCommand,
-    url,
-    method,
-    requestBody: '',
+    url: inspectedRequest.url || url,
+    method: inspectedRequest.method || method,
+    requestBody: inspectedRequest.bodyText || '',
     durationMs: 0,
     status: 'running',
     httpStatus: undefined,
@@ -354,9 +395,9 @@ async function executeFetchCommand(command) {
 
   try {
     let capturedRequest = {
-      url: url || '',
-      method: method || 'GET',
-      bodyText: '',
+      url: record.url || '',
+      method: record.method || 'GET',
+      bodyText: record.requestBody || '',
     };
 
     const fetchProxy = async (input, init) => {
