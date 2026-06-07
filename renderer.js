@@ -2,6 +2,8 @@ const records = [];
 const RECORD_DB_NAME = 'fetch-request-manager-db';
 const RECORD_STORE_NAME = 'requestRecords';
 const MAX_RECORDS = 100;
+const SETTINGS_KEY_CLIPBOARD_MONITOR_ENABLED = 'fetch-app.clipboardMonitor.enabled';
+const SETTINGS_KEY_QUEUE_AUTO_PROCESS_ENABLED = 'fetch-app.queueAutoProcess.enabled';
 
 let recordDbPromise;
 
@@ -30,6 +32,32 @@ const clipboardMonitor = {
   autoProcessEnabled: true,
   pendingCommands: [],
 };
+
+function saveToggleSettings() {
+  try {
+    localStorage.setItem(SETTINGS_KEY_CLIPBOARD_MONITOR_ENABLED, String(clipboardMonitor.enabled));
+    localStorage.setItem(SETTINGS_KEY_QUEUE_AUTO_PROCESS_ENABLED, String(clipboardMonitor.autoProcessEnabled));
+  } catch {
+    // Ignore storage failures (private mode, quota, etc.)
+  }
+}
+
+function loadToggleSettings() {
+  try {
+    const monitorEnabled = localStorage.getItem(SETTINGS_KEY_CLIPBOARD_MONITOR_ENABLED);
+    const queueAutoProcessEnabled = localStorage.getItem(SETTINGS_KEY_QUEUE_AUTO_PROCESS_ENABLED);
+
+    if (monitorEnabled === 'true' || monitorEnabled === 'false') {
+      clipboardMonitor.enabled = monitorEnabled === 'true';
+    }
+
+    if (queueAutoProcessEnabled === 'true' || queueAutoProcessEnabled === 'false') {
+      clipboardMonitor.autoProcessEnabled = queueAutoProcessEnabled === 'true';
+    }
+  } catch {
+    // Ignore storage read failures and keep defaults.
+  }
+}
 
 async function createQueuedRecord(command) {
   const normalizedCommand = normalizeCommand(command);
@@ -447,6 +475,7 @@ async function setClipboardMonitorEnabled(enabled) {
   }
 
   clipboardMonitor.enabled = enabled;
+  saveToggleSettings();
 
   if (clipboardMonitor.timerId) {
     window.clearInterval(clipboardMonitor.timerId);
@@ -1003,6 +1032,7 @@ clipboardMonitorToggle.addEventListener('click', async () => {
 
 queueProcessingToggle.addEventListener('click', () => {
   clipboardMonitor.autoProcessEnabled = !clipboardMonitor.autoProcessEnabled;
+  saveToggleSettings();
   renderQueueProcessingState();
   maybeStartQueueProcessing();
 });
@@ -1075,13 +1105,15 @@ async function checkRunningRecordsOnStartup() {
 }
 
 async function initializeApp() {
+  loadToggleSettings();
   await loadRecordsFromDb();
   await checkRunningRecordsOnStartup();
   rebuildQueueFromQueuedCards();
   enforceRecordLimit();
   render();
-  renderClipboardMonitorState();
   renderQueueProcessingState();
+
+  await setClipboardMonitorEnabled(clipboardMonitor.enabled);
 
   if (clipboardMonitor.pendingCommands.length > 0) {
     maybeStartQueueProcessing();
