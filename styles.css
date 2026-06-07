@@ -81,6 +81,28 @@ h1 {
   color: var(--muted);
 }
 
+.status-chip-btn {
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease, border-color 0.15s ease;
+}
+
+.status-chip-btn:hover {
+  border-color: #b6c2ce;
+}
+
+.status-chip-btn.is-deactive {
+  opacity: 0.55;
+  filter: grayscale(0.2);
+}
+
+.status-chip-btn.is-active {
+  background: #e8f4ff;
+  color: #0b5cad;
+  border-color: #0a66c2;
+  box-shadow: 0 0 0 2px rgba(10, 102, 194, 0.18), 0 2px 8px rgba(10, 102, 194, 0.12);
+  transform: translateY(-1px);
+}
+
 .status-chip.total {
   color: var(--ink);
 }

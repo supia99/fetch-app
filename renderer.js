@@ -33,6 +33,8 @@ const clipboardMonitor = {
   pendingCommands: [],
 };
 
+const activeStatusFilters = new Set(['all']);
+
 function saveToggleSettings() {
   try {
     localStorage.setItem(SETTINGS_KEY_CLIPBOARD_MONITOR_ENABLED, String(clipboardMonitor.enabled));
@@ -786,27 +788,46 @@ function renderStatusSummary() {
     }
   }
 
-  statusSummary.innerHTML = `
-    <span class="status-chip total">全体: ${counts.total}</span>
-    <span class="status-chip queued">実行前: ${counts.queued}</span>
-    <span class="status-chip running">実行中: ${counts.running}</span>
-    <span class="status-chip success">成功: ${counts.success}</span>
-    <span class="status-chip failure">失敗: ${counts.failure}</span>
-  `;
+  const chips = [
+    { key: 'all', label: '全体', count: counts.total, className: 'total' },
+    { key: 'queued', label: '実行前', count: counts.queued, className: 'queued' },
+    { key: 'running', label: '実行中', count: counts.running, className: 'running' },
+    { key: 'success', label: '成功', count: counts.success, className: 'success' },
+    { key: 'failure', label: '失敗', count: counts.failure, className: 'failure' },
+  ];
+
+  statusSummary.innerHTML = chips
+    .map((chip) => {
+      const isAllActive = activeStatusFilters.has('all');
+      const isActive = activeStatusFilters.has(chip.key);
+      const isDeactive = chip.key !== 'all' && isAllActive;
+      return `<button type="button" class="status-chip status-chip-btn ${chip.className}${isActive ? ' is-active' : ''}${isDeactive ? ' is-deactive' : ''}" data-status-filter="${chip.key}" aria-pressed="${isActive ? 'true' : 'false'}">${chip.label}: ${chip.count}</button>`;
+    })
+    .join('');
 }
 
 function render() {
   sortRecords();
   renderStatusSummary();
 
+  const isAllActive = activeStatusFilters.has('all');
+  const filteredRecords = isAllActive
+    ? records
+    : records.filter((record) => activeStatusFilters.has(record.status));
+
   if (records.length === 0) {
     results.innerHTML = '<div class="empty">fetchコマンドを入力してEnterで実行してください。</div>';
     return;
   }
 
+  if (filteredRecords.length === 0) {
+    results.innerHTML = '<div class="empty">選択したステータスの履歴はありません。</div>';
+    return;
+  }
+
   results.innerHTML = '';
 
-  for (const record of records) {
+  for (const record of filteredRecords) {
     const card = document.createElement('article');
     card.className = isDownloadPostRecord(record) ? 'card card--compact' : 'card';
 
@@ -1020,6 +1041,46 @@ results.addEventListener('click', async (event) => {
       await saveRecordsToDb();
     }
   }
+});
+
+statusSummary.addEventListener('click', (event) => {
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) {
+    return;
+  }
+
+  const button = target.closest('[data-status-filter]');
+  if (!(button instanceof HTMLElement)) {
+    return;
+  }
+
+  const statusFilter = button.dataset.statusFilter;
+  if (!statusFilter) {
+    return;
+  }
+
+  if (statusFilter === 'all') {
+    activeStatusFilters.clear();
+    activeStatusFilters.add('all');
+    render();
+    return;
+  }
+
+  if (activeStatusFilters.has('all')) {
+    activeStatusFilters.delete('all');
+  }
+
+  if (activeStatusFilters.has(statusFilter)) {
+    activeStatusFilters.delete(statusFilter);
+  } else {
+    activeStatusFilters.add(statusFilter);
+  }
+
+  if (activeStatusFilters.size === 0) {
+    activeStatusFilters.add('all');
+  }
+
+  render();
 });
 
 closeDialog.addEventListener('click', () => {
