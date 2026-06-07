@@ -75,6 +75,7 @@ async function enqueueClipboardCommand(command) {
   const queuedItem = { recordId: record.id, command: normalized };
   clipboardMonitor.pendingCommands.push(queuedItem);
   render();
+  void processPendingClipboardQueue();
   return queuedItem;
 }
 
@@ -443,9 +444,10 @@ async function setClipboardMonitorEnabled(enabled) {
       void checkClipboardForFetchCommand();
     }, 1000);
 
-    if (clipboardMonitor.pendingCommands.length > 0) {
-      void processPendingClipboardQueue();
-    }
+  }
+
+  if (clipboardMonitor.pendingCommands.length > 0) {
+    void processPendingClipboardQueue();
   }
 
   renderClipboardMonitorState();
@@ -1040,6 +1042,10 @@ async function initializeApp() {
   enforceRecordLimit();
   render();
   renderClipboardMonitorState();
+
+  if (clipboardMonitor.pendingCommands.length > 0) {
+    void processPendingClipboardQueue();
+  }
 }
 
 void initializeApp();
