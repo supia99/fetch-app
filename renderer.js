@@ -1028,6 +1028,20 @@ results.addEventListener('click', async (event) => {
   }
 
   if (action === 'rerun') {
+    if (record.status === 'queued') {
+      const queueIndex = clipboardMonitor.pendingCommands.findIndex((item) => item.recordId === id);
+      if (queueIndex >= 0) {
+        clipboardMonitor.pendingCommands.splice(queueIndex, 1);
+      }
+
+      const index = records.findIndex((item) => item.id === id);
+      if (index >= 0) {
+        records.splice(index, 1);
+        render();
+        await saveRecordsToDb();
+      }
+    }
+
     await executeFetchCommand(record.command);
     return;
   }
