@@ -1,7 +1,7 @@
 const records = [];
 const RECORD_DB_NAME = 'fetch-request-manager-db';
 const RECORD_STORE_NAME = 'requestRecords';
-const MAX_RECORDS = 100;
+const MAX_RECORDS = 300;
 const SETTINGS_KEY_CLIPBOARD_MONITOR_ENABLED = 'fetch-app.clipboardMonitor.enabled';
 const SETTINGS_KEY_QUEUE_AUTO_PROCESS_ENABLED = 'fetch-app.queueAutoProcess.enabled';
 
@@ -15,6 +15,7 @@ const clipboardMonitorToggle = document.getElementById('clipboardMonitorToggle')
 const clipboardMonitorStatus = document.getElementById('clipboardMonitorStatus');
 const queueProcessingToggle = document.getElementById('queueProcessingToggle');
 const queueProcessingStatus = document.getElementById('queueProcessingStatus');
+const clearSuccessButton = document.getElementById('clearSuccessButton');
 const statusSummary = document.getElementById('statusSummary');
 
 const detailStatus = document.getElementById('detailStatus');
@@ -810,9 +811,20 @@ function renderStatusSummary() {
     .join('');
 }
 
+function renderClearSuccessButtonState() {
+  if (!clearSuccessButton) {
+    return;
+  }
+
+  const successCount = records.filter((record) => record.status === 'success').length;
+  clearSuccessButton.disabled = successCount === 0;
+  clearSuccessButton.textContent = successCount > 0 ? `成功を一括削除 (${successCount})` : '成功を一括削除';
+}
+
 function render() {
   sortRecords();
   renderStatusSummary();
+  renderClearSuccessButtonState();
 
   const isAllActive = activeStatusFilters.has('all');
   const filteredRecords = isAllActive
@@ -1114,6 +1126,25 @@ queueProcessingToggle.addEventListener('click', () => {
   saveToggleSettings();
   renderQueueProcessingState();
   maybeStartQueueProcessing();
+});
+
+clearSuccessButton?.addEventListener('click', async () => {
+  let removed = false;
+
+  for (let i = records.length - 1; i >= 0; i -= 1) {
+    if (records[i].status === 'success') {
+      records.splice(i, 1);
+      removed = true;
+    }
+  }
+
+  if (!removed) {
+    render();
+    return;
+  }
+
+  render();
+  await saveRecordsToDb();
 });
 
 detailDialog.addEventListener('click', (event) => {

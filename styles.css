@@ -65,6 +65,23 @@ h1 {
   font-size: 0.88rem;
 }
 
+.bulk-delete-btn {
+  border-color: #edc4c1;
+  color: #8e1f17;
+  background: #fff5f4;
+}
+
+.bulk-delete-btn:hover {
+  border-color: #d98f89;
+}
+
+.bulk-delete-btn:disabled {
+  border-color: var(--line);
+  color: #9aa8b4;
+  background: #f4f6f8;
+  cursor: not-allowed;
+}
+
 .status-summary {
   display: flex;
   flex-wrap: wrap;
