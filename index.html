@@ -20,6 +20,11 @@
             キュー自動処理: ON
           </button>
           <span id="queueProcessingStatus" class="monitor-status">キュー自動処理はONです</span>
+          <label class="queue-concurrency-control" for="queueConcurrencyInput">
+            キュー並列数
+            <input id="queueConcurrencyInput" type="number" min="1" max="10" step="1" value="1" />
+          </label>
+          <span id="queueConcurrencyStatus" class="monitor-status">現在の並列数: 1</span>
           <button id="clearSuccessButton" type="button" class="bulk-delete-btn">成功を一括削除</button>
         </div>
         <div id="statusSummary" class="status-summary" aria-live="polite"></div>

@@ -4,6 +4,9 @@ const RECORD_STORE_NAME = 'requestRecords';
 const MAX_RECORDS = 300;
 const SETTINGS_KEY_CLIPBOARD_MONITOR_ENABLED = 'fetch-app.clipboardMonitor.enabled';
 const SETTINGS_KEY_QUEUE_AUTO_PROCESS_ENABLED = 'fetch-app.queueAutoProcess.enabled';
+const SETTINGS_KEY_QUEUE_CONCURRENCY = 'fetch-app.queue.concurrentWorkers';
+const DEFAULT_QUEUE_CONCURRENCY = 1;
+const MAX_QUEUE_CONCURRENCY = 10;
 
 let recordDbPromise;
 
@@ -15,6 +18,8 @@ const clipboardMonitorToggle = document.getElementById('clipboardMonitorToggle')
 const clipboardMonitorStatus = document.getElementById('clipboardMonitorStatus');
 const queueProcessingToggle = document.getElementById('queueProcessingToggle');
 const queueProcessingStatus = document.getElementById('queueProcessingStatus');
+const queueConcurrencyInput = document.getElementById('queueConcurrencyInput');
+const queueConcurrencyStatus = document.getElementById('queueConcurrencyStatus');
 const clearSuccessButton = document.getElementById('clearSuccessButton');
 const statusSummary = document.getElementById('statusSummary');
 
@@ -30,16 +35,29 @@ const clipboardMonitor = {
   lastClipboardText: '',
   isChecking: false,
   isExecuting: false,
+  isProcessingQueue: false,
+  activeQueueWorkers: 0,
   autoProcessEnabled: true,
+  queueConcurrency: DEFAULT_QUEUE_CONCURRENCY,
   pendingCommands: [],
 };
 
 const activeStatusFilters = new Set(['all']);
 
+function normalizeQueueConcurrency(value) {
+  const parsed = Number.parseInt(String(value), 10);
+  if (!Number.isFinite(parsed)) {
+    return DEFAULT_QUEUE_CONCURRENCY;
+  }
+
+  return Math.min(MAX_QUEUE_CONCURRENCY, Math.max(1, parsed));
+}
+
 function saveToggleSettings() {
   try {
     localStorage.setItem(SETTINGS_KEY_CLIPBOARD_MONITOR_ENABLED, String(clipboardMonitor.enabled));
     localStorage.setItem(SETTINGS_KEY_QUEUE_AUTO_PROCESS_ENABLED, String(clipboardMonitor.autoProcessEnabled));
+    localStorage.setItem(SETTINGS_KEY_QUEUE_CONCURRENCY, String(clipboardMonitor.queueConcurrency));
   } catch {
     // Ignore storage failures (private mode, quota, etc.)
   }
@@ -49,6 +67,7 @@ function loadToggleSettings() {
   try {
     const monitorEnabled = localStorage.getItem(SETTINGS_KEY_CLIPBOARD_MONITOR_ENABLED);
     const queueAutoProcessEnabled = localStorage.getItem(SETTINGS_KEY_QUEUE_AUTO_PROCESS_ENABLED);
+    const queueConcurrency = localStorage.getItem(SETTINGS_KEY_QUEUE_CONCURRENCY);
 
     if (monitorEnabled === 'true' || monitorEnabled === 'false') {
       clipboardMonitor.enabled = monitorEnabled === 'true';
@@ -56,6 +75,10 @@ function loadToggleSettings() {
 
     if (queueAutoProcessEnabled === 'true' || queueAutoProcessEnabled === 'false') {
       clipboardMonitor.autoProcessEnabled = queueAutoProcessEnabled === 'true';
+    }
+
+    if (queueConcurrency != null) {
+      clipboardMonitor.queueConcurrency = normalizeQueueConcurrency(queueConcurrency);
     }
   } catch {
     // Ignore storage read failures and keep defaults.
@@ -332,6 +355,14 @@ function renderQueueProcessingState() {
   queueProcessingStatus.textContent = clipboardMonitor.autoProcessEnabled
     ? 'キュー自動処理はONです'
     : 'キュー自動処理はOFFです(キューは保持されます)';
+
+  if (queueConcurrencyInput) {
+    queueConcurrencyInput.value = String(clipboardMonitor.queueConcurrency);
+  }
+
+  if (queueConcurrencyStatus) {
+    queueConcurrencyStatus.textContent = `現在の並列数: ${clipboardMonitor.queueConcurrency}`;
+  }
 }
 
 function maybeStartQueueProcessing() {
@@ -339,7 +370,7 @@ function maybeStartQueueProcessing() {
     return;
   }
 
-  if (records.some((record) => record.status === 'running')) {
+  if (clipboardMonitor.pendingCommands.length === 0) {
     return;
   }
 
@@ -413,36 +444,48 @@ async function checkClipboardForFetchCommand() {
   }
 }
 
-async function runClipboardCommand(initialCommand) {
-  if (clipboardMonitor.isExecuting) {
-    await enqueueClipboardCommand(initialCommand);
-    return;
-  }
-
+function scheduleQueueWorkers() {
   if (!clipboardMonitor.autoProcessEnabled) {
-    await enqueueClipboardCommand(initialCommand);
     return;
   }
 
-  clipboardMonitor.isExecuting = true;
+  while (
+    clipboardMonitor.activeQueueWorkers < clipboardMonitor.queueConcurrency &&
+    clipboardMonitor.pendingCommands.length > 0
+  ) {
+    clipboardMonitor.activeQueueWorkers += 1;
+    void processQueueWorker();
+  }
+}
 
+async function processQueueWorker() {
   try {
-    await enqueueClipboardCommand(initialCommand);
-
-    while (clipboardMonitor.pendingCommands.length > 0) {
+    while (clipboardMonitor.autoProcessEnabled) {
       const nextItem = clipboardMonitor.pendingCommands.shift();
+      if (!nextItem) {
+        return;
+      }
+
       const queuedRecord = records.find((item) => item.id === nextItem.recordId);
       if (!queuedRecord) {
         continue;
       }
 
-      commandInput.value = nextItem.command;
       setClipboardMonitorStatus('監視ON: クリップボードのfetchコマンドを自動実行しました');
       await executeFetchCommand(nextItem.command, queuedRecord);
-      commandInput.value = '';
     }
   } finally {
-    clipboardMonitor.isExecuting = false;
+    clipboardMonitor.activeQueueWorkers = Math.max(0, clipboardMonitor.activeQueueWorkers - 1);
+
+    if (clipboardMonitor.autoProcessEnabled && clipboardMonitor.pendingCommands.length > 0) {
+      scheduleQueueWorkers();
+      return;
+    }
+
+    if (clipboardMonitor.activeQueueWorkers === 0) {
+      clipboardMonitor.isProcessingQueue = false;
+      clipboardMonitor.isExecuting = false;
+    }
   }
 }
 
@@ -451,28 +494,13 @@ async function processPendingClipboardQueue() {
     return;
   }
 
-  if (clipboardMonitor.isExecuting) {
+  if (clipboardMonitor.pendingCommands.length === 0) {
     return;
   }
 
+  clipboardMonitor.isProcessingQueue = true;
   clipboardMonitor.isExecuting = true;
-
-  try {
-    while (clipboardMonitor.pendingCommands.length > 0) {
-      const nextItem = clipboardMonitor.pendingCommands.shift();
-      const queuedRecord = records.find((item) => item.id === nextItem.recordId);
-      if (!queuedRecord) {
-        continue;
-      }
-
-      commandInput.value = nextItem.command;
-      setClipboardMonitorStatus('監視ON: クリップボードのfetchコマンドを自動実行しました');
-      await executeFetchCommand(nextItem.command, queuedRecord);
-      commandInput.value = '';
-    }
-  } finally {
-    clipboardMonitor.isExecuting = false;
-  }
+  scheduleQueueWorkers();
 }
 
 async function setClipboardMonitorEnabled(enabled) {
@@ -1123,6 +1151,13 @@ clipboardMonitorToggle.addEventListener('click', async () => {
 
 queueProcessingToggle.addEventListener('click', () => {
   clipboardMonitor.autoProcessEnabled = !clipboardMonitor.autoProcessEnabled;
+  saveToggleSettings();
+  renderQueueProcessingState();
+  maybeStartQueueProcessing();
+});
+
+queueConcurrencyInput?.addEventListener('change', () => {
+  clipboardMonitor.queueConcurrency = normalizeQueueConcurrency(queueConcurrencyInput.value);
   saveToggleSettings();
   renderQueueProcessingState();
   maybeStartQueueProcessing();

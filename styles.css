@@ -65,6 +65,29 @@ h1 {
   font-size: 0.88rem;
 }
 
+.queue-concurrency-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.88rem;
+  color: var(--muted);
+}
+
+#queueConcurrencyInput {
+  width: 72px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--ink);
+  padding: 5px 10px;
+  font-size: 0.88rem;
+}
+
+#queueConcurrencyInput:focus {
+  outline: 2px solid #9ac3eb;
+  border-color: #9ac3eb;
+}
+
 .bulk-delete-btn {
   border-color: #edc4c1;
   color: #8e1f17;
